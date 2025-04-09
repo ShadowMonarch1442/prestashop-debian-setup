@@ -22,6 +22,7 @@ for i in 1 2 3; do
         :
     done
     apt-cdrom add -m
+    umount /media/cdrom
 done
 
 echo "==> Update dan install dependensi..."
