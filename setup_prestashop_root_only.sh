@@ -1,28 +1,28 @@
 #!/bin/bash
 
-echo "==> Tambahkan DVD Debian (1 sampai 3)..."
+# Script Otomatis Setup PrestaShop di Debian 10
+# Versi ramah pengguna dengan deteksi dan ganti DVD manual
 
-# Buat mount point jika belum ada
-mkdir -p /media/cdrom
-
-# Fungsi untuk mount dan tambah DVD
-tambah_dvd() {
-  echo "==> Masukkan DVD Debian ke-$1, lalu tekan [ENTER]..."
-  read -r
-  echo "==> Mounting DVD ke-$1..."
-  mount /dev/sr0 /media/cdrom
-
-  echo "==> Menambahkan DVD ke daftar APT..."
-  apt-cdrom add -d /media/cdrom
-
-  echo "==> Unmount DVD ke-$1..."
-  umount /media/cdrom
+check_cdrom_mount() {
+    echo "==> Mengecek DVD di /media/cdrom..."
+    if mount /dev/sr0 /media/cdrom 2>/dev/null; then
+        echo "✓ DVD berhasil dimount."
+        return 0
+    else
+        echo "✗ DVD tidak terdeteksi. Pastikan DVD benar dan tekan ENTER untuk coba lagi."
+        read -p "Tekan ENTER setelah memasukkan DVD yang benar..."
+        return 1
+    fi
 }
 
-# Tambahkan ketiga DVD
-tambah_dvd 1
-tambah_dvd 2
-tambah_dvd 3
+echo "==> Tambahkan DVD Debian (1 sampai 3)..."
+for i in 1 2 3; do
+    echo "==> Masukkan DVD Debian ke-$i, lalu tekan [ENTER]..."
+    while ! check_cdrom_mount; do
+        :
+    done
+    apt-cdrom add -m
+done
 
 echo "==> Update dan install dependensi..."
 apt update
