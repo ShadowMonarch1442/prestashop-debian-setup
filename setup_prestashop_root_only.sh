@@ -1,14 +1,10 @@
 #!/bin/bash
 
-# Script Otomatis Setup PrestaShop di Debian 10
-# Versi ramah pengguna dengan deteksi dan ganti DVD manual
+# Setup PrestaShop di Debian 10 via DVD (3 Disk)
+# Versi stabil dengan deteksi ID disc + retry apt install
 
 check_cdrom_mount() {
     echo "==> Mengecek DVD di /media/cdrom..."
-    
-    # Unmount sebelumnya biar gak nyangkut
-    umount /media/cdrom 2>/dev/null
-    
     if mount /dev/sr0 /media/cdrom 2>/dev/null; then
         echo "✓ DVD berhasil dimount."
         return 0
@@ -19,47 +15,48 @@ check_cdrom_mount() {
     fi
 }
 
+get_disc_id() {
+    apt-cdrom ident 2>/dev/null | grep "Identifying" | sed 's/.*\[\(.*\)\]/\1/'
+}
+
 echo "==> Tambahkan DVD Debian (1 sampai 3)..."
+PREV_ID=""
 for i in 1 2 3; do
+    eject /dev/sr0
     echo "==> Masukkan DVD Debian ke-$i, lalu tekan [ENTER]..."
-    while ! check_cdrom_mount; do
-        :
+    read
+    sleep 2
+
+    while true; do
+        if check_cdrom_mount; then
+            CURRENT_ID=$(get_disc_id)
+            if [ "$CURRENT_ID" != "$PREV_ID" ] && [ ! -z "$CURRENT_ID" ]; then
+                echo "✓ DVD ke-$i terdeteksi dengan ID: $CURRENT_ID"
+                PREV_ID="$CURRENT_ID"
+                apt-cdrom add -m
+                break
+            else
+                echo "✗ Disc masih sama atau gagal terbaca. Pastikan disc sudah diganti."
+            fi
+        fi
+        echo "Coba lagi? Tekan ENTER setelah mengganti DVD..."
+        read
+        sleep 2
     done
-    apt-cdrom add -m
 done
 
-echo "==> Masukkan kembali DVD Debian ke-1 untuk update repository."
-read -p "Tekan ENTER setelah memasukkan DVD Debian ke-1..."
+echo "==> Semua DVD selesai ditambahkan. Melakukan update repository..."
+apt update || { echo "✗ apt update gagal. Periksa DVD atau repository Anda."; exit 1; }
 
-# Mount ulang DVD-1
-while ! mount /dev/sr0 /media/cdrom 2>/dev/null; do
-    echo "✗ DVD tidak berhasil dimount. Pastikan DVD-1 dimasukkan dengan benar."
-    read -p "Tekan ENTER untuk coba lagi..."
-done
-
-echo "==> Update repository..."
-if apt update; then
-    echo "✓ Repository berhasil diperbarui."
-else
-    echo "✗ apt update gagal. Periksa kembali DVD Debian ke-1."
-    exit 1
-fi
-
-echo "==> Install dependensi utama..."
-# Install per paket, biar nggak gagal total kalau 1 paket butuh disk lain
-packages=(
-    apache2 mariadb-server php
-    php-gd php-xml php-mbstring php-zip
-    php-mysql php-curl php-intl
-    wget zip unzip
-)
-
-for pkg in "${packages[@]}"; do
-    echo "==> Memasang paket: $pkg"
-    apt install -y "$pkg" || {
-        echo "✗ Gagal memasang $pkg. Coba pastikan DVD sesuai dan ulangi dengan ENTER."
-        read -p "Masukkan DVD yang sesuai lalu tekan ENTER..."
-    }
+echo "==> Menginstall dependensi (Apache2, PHP, MariaDB)..."
+INSTALL_PKGS="apache2 mariadb-server php php-gd php-xml php-mbstring php-zip php-mysql php-curl php-intl wget zip unzip"
+MAX_RETRY=5
+for ((i=1; i<=MAX_RETRY; i++)); do
+    apt install -y $INSTALL_PKGS && break
+    echo "✗ Install gagal, percobaan ke-$i/$MAX_RETRY. Masukkan DVD yang dibutuhkan lalu tekan ENTER..."
+    read
+    eject /dev/sr0
+    sleep 2
 done
 
 echo "==> Download PrestaShop 8.2.0..."
