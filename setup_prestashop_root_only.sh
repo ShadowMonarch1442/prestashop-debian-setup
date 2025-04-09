@@ -2,85 +2,69 @@
 
 set -e
 
-echo "==> Tambahkan DVD Debian (1 sampai 3)..."
-
-for i in 1 2 3; do
-    echo ""
-    echo "==> Masukkan DVD Debian ke-$i, lalu tekan [ENTER]..."
-    read
-
-    echo "==> Mengecek DVD di /media/cdrom..."
-    mount_point=$(find /media/ -maxdepth 1 -type d -name "cdrom*" | head -n 1)
-
-    if [[ -z "$mount_point" ]]; then
-        echo "✗ DVD gagal dimount. Pastikan disc dimasukkan dan dikenali sistem."
-        exit 1
-    fi
-
-    echo "✓ DVD berhasil dimount."
-
-    # Get DVD ID
-    dvd_id=$(dd if="$mount_point/.disk/info" bs=1 count=512 2>/dev/null | md5sum | cut -d' ' -f1)
-    echo "✓ DVD ke-$i terdeteksi dengan ID: $dvd_id"
-
-    # Tambahkan repo dari DVD ke sources.list.d menggunakan apt-cdrom
-    apt-cdrom -d "$mount_point" add -m -a
-done
-
-echo ""
-echo "==> Semua DVD selesai ditambahkan. Repository sudah otomatis diperbarui oleh apt-cdrom."
-echo ""
-
-###############################
-# Mulai instalasi PrestaShop #
-###############################
-
 echo "==> Memulai instalasi PrestaShop dan dependensi..."
 
-# Install LAMP stack & pendukung
-apt install -y apache2 mariadb-server php php-mysql libapache2-mod-php php-xml php-curl php-intl php-zip php-gd php-mbstring unzip wget
+# Daftar paket yang dibutuhkan
+INSTALL_PKGS="apache2 mariadb-server php php-gd php-xml php-mbstring php-zip php-mysql php-curl php-intl wget zip unzip"
+MAX_RETRY=5
+
+# Install dengan retry jika minta DVD
+for ((i=1; i<=MAX_RETRY; i++)); do
+    if apt install -y $INSTALL_PKGS; then
+        echo "✓ Semua paket berhasil diinstall."
+        break
+    else
+        echo "✗ Gagal install (percobaan $i/$MAX_RETRY). Mungkin perlu ganti DVD."
+        read -p "Masukkan DVD yang diperlukan lalu tekan ENTER untuk melanjutkan..."
+        eject /dev/sr0
+        sleep 2
+    fi
+done
 
 # Aktifkan modul rewrite Apache
 a2enmod rewrite
 systemctl restart apache2
 
-# Setup database PrestaShop
+# Setting database
 echo "==> Membuat database dan user untuk PrestaShop..."
 DB_NAME="prestashop_db"
 DB_USER="shadow"
 DB_PASS="1234"
 
-mysql -e "CREATE DATABASE ${DB_NAME} DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
-mysql -e "CREATE USER '${DB_USER}'@'localhost' IDENTIFIED BY '${DB_PASS}';"
-mysql -e "GRANT ALL PRIVILEGES ON ${DB_NAME}.* TO '${DB_USER}'@'localhost';"
-mysql -e "FLUSH PRIVILEGES;"
+mysql -u root <<MYSQL_SCRIPT
+CREATE DATABASE IF NOT EXISTS ${DB_NAME} DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER IF NOT EXISTS '${DB_USER}'@'localhost' IDENTIFIED BY '${DB_PASS}';
+GRANT ALL PRIVILEGES ON ${DB_NAME}.* TO '${DB_USER}'@'localhost';
+FLUSH PRIVILEGES;
+MYSQL_SCRIPT
 
-echo "✓ Database berhasil dibuat."
+echo "✓ Database berhasil dikonfigurasi."
 
-# Download dan ekstrak PrestaShop
-echo "==> Mendownload PrestaShop versi terbaru..."
-cd /tmp
-wget https://download.prestashop.com/download/releases/prestashop_1.7.8.10.zip -O prestashop.zip
+# Download PrestaShop
+echo "==> Mendownload PrestaShop versi 8.2.0..."
+wget https://github.com/PrestaShop/PrestaShop/releases/download/8.2.0/prestashop_8.2.0.zip -O /var/www/prestashop_8.2.0.zip
+
+# Ekstrak PrestaShop
+echo "==> Mengekstrak PrestaShop..."
+cd /var/www
+unzip prestashop_8.2.0.zip
+mv prestashop.zip html/
+cd html
 unzip prestashop.zip -d prestashop
 
-# Pindahkan ke direktori web
-echo "==> Menyalin file PrestaShop ke /var/www/html/prestashop..."
-rm -rf /var/www/html/prestashop
-mkdir -p /var/www/html/prestashop
-cp -r prestashop/* /var/www/html/prestashop/
-
-# Ubah kepemilikan dan permission
+# Atur izin
 chown -R www-data:www-data /var/www/html/prestashop
 chmod -R 755 /var/www/html/prestashop
 
-echo ""
-echo "✓ PrestaShop berhasil dipasang."
+# Info akhir
 echo ""
 echo "==> Instalasi selesai!"
-echo "Buka browser dan akses: http://<ip-server>/prestashop"
+echo "Silakan buka browser dan akses: http://<ip-server>/prestashop"
 echo "Ikuti wizard instalasi, dan gunakan:"
 echo "- DB Name : ${DB_NAME}"
 echo "- DB User : ${DB_USER}"
 echo "- DB Pass : ${DB_PASS}"
 echo ""
-echo "Setelah instalasi, hapus folder /install dan ubah nama folder /admin demi keamanan."
+echo "🧹 Setelah instalasi:"
+echo "- Hapus folder /install"
+echo "- Ganti nama folder /admin menjadi sesuatu yang unik"
