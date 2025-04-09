@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# Script Otomatis Setup PrestaShop di Debian 10
-# Versi ramah pengguna dengan deteksi dan ganti DVD manual
+# Script Aman Setup PrestaShop di Debian 10
+# Dilengkapi loop untuk memastikan semua paket terinstall dengan benar
 
 check_cdrom_mount() {
     echo "==> Mengecek DVD di /media/cdrom..."
@@ -22,30 +22,33 @@ for i in 1 2 3; do
         :
     done
     apt-cdrom add -m
-    umount /media/cdrom
 done
 
-echo "==> Update dan install dependensi..."
+echo "==> Update repository..."
 apt update
-apt install -y apache2 mariadb-server php php-gd php-xml php-mbstring php-zip php-mysql php-curl php-intl wget zip unzip
+
+# Daftar paket penting
+PACKAGES="apache2 mariadb-server php php-gd php-xml php-mbstring php-zip php-mysql php-curl php-intl wget zip unzip"
+
+# Loop install sampai semua paket selesai
+for package in $PACKAGES; do
+    until dpkg -s $package &>/dev/null; do
+        echo "==> Menginstall $package ..."
+        apt install -y $package
+    done
+    echo "✓ $package sudah terinstall."
+done
 
 echo "==> Download PrestaShop 8.2.0..."
 wget https://github.com/PrestaShop/PrestaShop/releases/download/8.2.0/prestashop_8.2.0.zip -P /var/www
 
 echo "==> Ekstrak file PrestaShop..."
 cd /var/www
-unzip prestashop_8.2.0.zip
+unzip -o prestashop_8.2.0.zip
 mv prestashop.zip html/
 cd html
-unzip prestashop.zip -d prestashop
+unzip -o prestashop.zip -d prestashop
 
 echo "==> Konfigurasi database MySQL..."
 mysql -u root <<MYSQL_SCRIPT
-CREATE DATABASE IF NOT EXISTS prestashop_db;
-CREATE USER IF NOT EXISTS 'shadow'@'localhost' IDENTIFIED BY '1234';
-GRANT ALL PRIVILEGES ON prestashop_db.* TO 'shadow'@'localhost';
-FLUSH PRIVILEGES;
-MYSQL_SCRIPT
-
-echo "==> Setup selesai! Akses PrestaShop via browser di http://<ip-server>/prestashop"
-echo "==> Jangan lupa hapus folder /install dan ganti nama folder /admin setelah instalasi selesai via browser."
+CREATE DATABASE IF NOT
